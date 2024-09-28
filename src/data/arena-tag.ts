@@ -6,6 +6,7 @@ import { getPokemonNameWithAffix } from "../messages";
 import Pokemon, { HitResult, PokemonMove } from "../field/pokemon";
 import { StatusEffect } from "./status-effect";
 import { BattlerIndex } from "../battle";
+import BattleScene from "../battle-scene";
 import { BlockNonDirectDamageAbAttr, ChangeMovePriorityAbAttr, ProtectStatAbAttr, applyAbAttrs } from "./ability";
 import { Stat } from "#enums/stat";
 import { CommonAnim, CommonBattleAnim } from "./battle-anims";
@@ -63,6 +64,10 @@ export abstract class ArenaTag {
     return this.sourceMove
       ? allMoves[this.sourceMove].name
       : null;
+  }
+
+  getSourcePokemon(scene: BattleScene): Pokemon | null {
+    return this.sourceId ? scene.getPokemonById(this.sourceId) : null;
   }
 }
 
@@ -588,7 +593,7 @@ class SpikesTag extends ArenaTrapTag {
         const damage = Utils.toDmgValue(pokemon.getMaxHp() * damageHpRatio);
 
         pokemon.scene.queueMessage(i18next.t("arenaTag:spikesActivateTrap", { pokemonNameWithAffix: getPokemonNameWithAffix(pokemon) }));
-        pokemon.damageAndUpdate(damage, HitResult.OTHER);
+        pokemon.damageAndUpdate(damage, this.getSourcePokemon(pokemon.scene), HitResult.OTHER);
         if (pokemon.turnData) {
           pokemon.turnData.damageTaken += damage;
         }
@@ -747,7 +752,7 @@ class StealthRockTag extends ArenaTrapTag {
     if (damageHpRatio) {
       const damage = Utils.toDmgValue(pokemon.getMaxHp() * damageHpRatio);
       pokemon.scene.queueMessage(i18next.t("arenaTag:stealthRockActivateTrap", { pokemonNameWithAffix: getPokemonNameWithAffix(pokemon) }));
-      pokemon.damageAndUpdate(damage, HitResult.OTHER);
+      pokemon.damageAndUpdate(damage, this.getSourcePokemon(pokemon.scene), HitResult.OTHER);
       if (pokemon.turnData) {
         pokemon.turnData.damageTaken += damage;
       }

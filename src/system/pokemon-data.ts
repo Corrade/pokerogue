@@ -5,7 +5,7 @@ import { Nature } from "../data/nature";
 import { PokeballType } from "../data/pokeball";
 import { getPokemonSpecies } from "../data/pokemon-species";
 import { Status } from "../data/status-effect";
-import Pokemon, { EnemyPokemon, PokemonMove, PokemonSummonData } from "../field/pokemon";
+import Pokemon, { EnemyPokemon, PokemonMove, PokemonSummonData, PokemonRunData } from "../field/pokemon";
 import { TrainerSlot } from "../data/trainer-config";
 import { Variant } from "#app/data/variant";
 import { loadBattlerTag } from "../data/battler-tags";
@@ -59,6 +59,7 @@ export default class PokemonData {
   public bossSegments?: integer;
 
   public summonData: PokemonSummonData;
+  public runData: PokemonRunData;
   /** Data that can customize a Pokemon in non-standard ways from its Species */
   public mysteryEncounterPokemonData: MysteryEncounterPokemonData;
 
@@ -121,13 +122,14 @@ export default class PokemonData {
         this.status = sourcePokemon.status;
         if (this.player) {
           this.summonData = sourcePokemon.summonData;
+          this.runData = sourcePokemon.runData;
         }
       }
     } else {
       this.moveset = (source.moveset || [ new PokemonMove(Moves.TACKLE), new PokemonMove(Moves.GROWL) ]).filter(m => m).map((m: any) => new PokemonMove(m.moveId, m.ppUsed, m.ppUp));
       if (!forHistory) {
         this.status = source.status
-          ? new Status(source.status.effect, source.status.turnCount, source.status.cureTurn)
+          ? new Status(source.status.effect, source.status.turnCount, source.status.cureTurn, source.status.sourceId)
           : null;
       }
 
@@ -148,6 +150,15 @@ export default class PokemonData {
         } else {
           this.summonData.tags = [];
         }
+      }
+
+      this.runData = new PokemonRunData();
+      if (!forHistory && source.runData) {
+        this.runData.knockouts = source.runData.knockouts;
+        this.runData.assists = source.runData.assists;
+        this.runData.faints = source.runData.faints;
+        this.runData.damageDealt = source.runData.damageDealt;
+        this.runData.damageTaken = source.runData.damageTaken;
       }
     }
   }

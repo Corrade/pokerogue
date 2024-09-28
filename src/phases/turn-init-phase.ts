@@ -44,6 +44,13 @@ export class TurnInitPhase extends FieldPhase {
       }
     });
 
+    // Begin tracking assists after CheckSwitchPhase to avoid crediting leads that are immediately swapped out (in encounters)
+    for (const enemyPokemon of this.scene.getEnemyField()) {
+      for (const playerPokemon of this.scene.getPlayerField()) {
+        enemyPokemon.battleData.creditAssistOnFaintToPokemonIds.add(playerPokemon.id);
+      }
+    }
+
     //this.scene.pushPhase(new MoveAnimTestPhase(this.scene));
     this.scene.eventTarget.dispatchEvent(new TurnInitEvent());
 

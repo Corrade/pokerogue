@@ -51,12 +51,18 @@ export class TurnEndPhase extends FieldPhase {
     this.scene.arena.lapseTags();
 
     if (this.scene.arena.weather && !this.scene.arena.weather.lapse()) {
-      this.scene.arena.trySetWeather(WeatherType.NONE, false);
+      this.scene.arena.trySetWeather(WeatherType.NONE);
       this.scene.arena.triggerWeatherBasedFormChangesToNormal();
     }
 
     if (this.scene.arena.terrain && !this.scene.arena.terrain.lapse()) {
       this.scene.arena.trySetTerrain(TerrainType.NONE, false);
+    }
+
+    for (const enemyPokemon of this.scene.getEnemyField()) {
+      for (const playerPokemon of this.scene.getPlayerField()) {
+        enemyPokemon.battleData.creditAssistOnFaintToPokemonIds.add(playerPokemon.id);
+      }
     }
 
     this.end();

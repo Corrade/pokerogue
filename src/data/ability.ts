@@ -552,7 +552,7 @@ export class PostDefendGulpMissileAbAttr extends PostDefendAbAttr {
     applyAbAttrs(BlockNonDirectDamageAbAttr, attacker, cancelled);
 
     if (!cancelled.value) {
-      attacker.damageAndUpdate(Math.max(1, Math.floor(attacker.getMaxHp() / 4)), HitResult.OTHER);
+      attacker.damageAndUpdate(Math.max(1, Math.floor(attacker.getMaxHp() / 4)), attacker, HitResult.OTHER);
     }
 
     if (battlerTag.tagType === BattlerTagType.GULP_MISSILE_ARROKUDA) {
@@ -945,7 +945,7 @@ export class PostDefendContactDamageAbAttr extends PostDefendAbAttr {
 
   applyPostDefend(pokemon: Pokemon, passive: boolean, simulated: boolean, attacker: Pokemon, move: Move, hitResult: HitResult, args: any[]): boolean {
     if (!simulated && move.checkFlag(MoveFlags.MAKES_CONTACT, attacker, pokemon) && !attacker.hasAbilityWithAttr(BlockNonDirectDamageAbAttr)) {
-      attacker.damageAndUpdate(Utils.toDmgValue(attacker.getMaxHp() * (1 / this.damageRatio)), HitResult.OTHER);
+      attacker.damageAndUpdate(Utils.toDmgValue(attacker.getMaxHp() * (1 / this.damageRatio)), pokemon, HitResult.OTHER);
       attacker.turnData.damageTaken += Utils.toDmgValue(attacker.getMaxHp() * (1 / this.damageRatio));
       return true;
     }
@@ -1015,7 +1015,7 @@ export class PostDefendWeatherChangeAbAttr extends PostDefendAbAttr {
       if (simulated) {
         return pokemon.scene.arena.weather?.weatherType !== this.weatherType;
       }
-      return pokemon.scene.arena.trySetWeather(this.weatherType, true);
+      return pokemon.scene.arena.trySetWeather(this.weatherType, pokemon.id);
     }
 
     return false;
@@ -2205,7 +2205,7 @@ export class PostSummonWeatherChangeAbAttr extends PostSummonAbAttr {
       if (simulated) {
         return pokemon.scene.arena.weather?.weatherType !== this.weatherType;
       } else {
-        return pokemon.scene.arena.trySetWeather(this.weatherType, true);
+        return pokemon.scene.arena.trySetWeather(this.weatherType, pokemon.id);
       }
     }
 
@@ -2560,7 +2560,7 @@ export class PreSwitchOutClearWeatherAbAttr extends PreSwitchOutAbAttr {
     }
 
     if (turnOffWeather) {
-      pokemon.scene.arena.trySetWeather(WeatherType.NONE, false);
+      pokemon.scene.arena.trySetWeather(WeatherType.NONE);
       return true;
     }
 
@@ -3298,7 +3298,8 @@ export class PostWeatherLapseDamageAbAttr extends PostWeatherLapseAbAttr {
     if (!simulated) {
       const abilityName = (!passive ? pokemon.getAbility() : pokemon.getPassiveAbility()).name;
       scene.queueMessage(i18next.t("abilityTriggers:postWeatherLapseDamage", { pokemonNameWithAffix: getPokemonNameWithAffix(pokemon), abilityName }));
-      pokemon.damageAndUpdate(Utils.toDmgValue(pokemon.getMaxHp() / (16 / this.damageFactor)), HitResult.OTHER);
+      const source = weather.sourceId ? pokemon.scene.getPokemonById(weather.sourceId) : null;
+      pokemon.damageAndUpdate(Utils.toDmgValue(pokemon.getMaxHp() / (16 / this.damageFactor)), source, HitResult.OTHER);
     }
 
     return true;
@@ -3615,7 +3616,7 @@ export class PostTurnHurtIfSleepingAbAttr extends PostTurnAbAttr {
     for (const opp of pokemon.getOpponents()) {
       if ((opp.status?.effect === StatusEffect.SLEEP || opp.hasAbility(Abilities.COMATOSE)) && !opp.hasAbilityWithAttr(BlockNonDirectDamageAbAttr)) {
         if (!simulated) {
-          opp.damageAndUpdate(Utils.toDmgValue(opp.getMaxHp() / 8), HitResult.OTHER);
+          opp.damageAndUpdate(Utils.toDmgValue(opp.getMaxHp() / 8), pokemon, HitResult.OTHER);
           pokemon.scene.queueMessage(i18next.t("abilityTriggers:badDreams", {pokemonName: getPokemonNameWithAffix(opp)}));
         }
         hadEffect = true;
@@ -3673,7 +3674,7 @@ export class PostBiomeChangeWeatherChangeAbAttr extends PostBiomeChangeAbAttr {
       if (simulated) {
         return pokemon.scene.arena.weather?.weatherType !== this.weatherType;
       } else {
-        return pokemon.scene.arena.trySetWeather(this.weatherType, true);
+        return pokemon.scene.arena.trySetWeather(this.weatherType, pokemon.id);
       }
     }
 
@@ -4060,7 +4061,7 @@ export class PostFaintClearWeatherAbAttr extends PostFaintAbAttr {
     }
 
     if (turnOffWeather) {
-      pokemon.scene.arena.trySetWeather(WeatherType.NONE, false);
+      pokemon.scene.arena.trySetWeather(WeatherType.NONE);
       return true;
     }
 
@@ -4085,7 +4086,7 @@ export class PostFaintContactDamageAbAttr extends PostFaintAbAttr {
         return false;
       }
       if (!simulated) {
-        attacker.damageAndUpdate(Utils.toDmgValue(attacker.getMaxHp() * (1 / this.damageRatio)), HitResult.OTHER);
+        attacker.damageAndUpdate(Utils.toDmgValue(attacker.getMaxHp() * (1 / this.damageRatio)), pokemon, HitResult.OTHER);
         attacker.turnData.damageTaken += Utils.toDmgValue(attacker.getMaxHp() * (1 / this.damageRatio));
       }
       return true;
@@ -4110,7 +4111,7 @@ export class PostFaintHPDamageAbAttr extends PostFaintAbAttr {
   applyPostFaint(pokemon: Pokemon, passive: boolean, simulated: boolean, attacker?: Pokemon, move?: Move, hitResult?: HitResult, ...args: any[]): boolean {
     if (move !== undefined && attacker !== undefined && !simulated) { //If the mon didn't die to indirect damage
       const damage = pokemon.turnData.attacksReceived[0].damage;
-      attacker.damageAndUpdate((damage), HitResult.OTHER);
+      attacker.damageAndUpdate((damage), pokemon, HitResult.OTHER);
       attacker.turnData.damageTaken += damage;
     }
     return true;
@@ -4474,7 +4475,7 @@ export class FormBlockDamageAbAttr extends ReceivedMoveDamageMultiplierAbAttr {
         (args[0] as Utils.NumberHolder).value = this.multiplier;
         pokemon.removeTag(this.tagType);
         if (this.recoilDamageFunc) {
-          pokemon.damageAndUpdate(this.recoilDamageFunc(pokemon), HitResult.OTHER, false, false, true, true);
+          pokemon.damageAndUpdate(this.recoilDamageFunc(pokemon), attacker, HitResult.OTHER, false, false, true, true);
         }
       }
       return true;

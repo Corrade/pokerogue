@@ -15,6 +15,8 @@ export class PostTurnStatusEffectPhase extends PokemonPhase {
   }
 
   start() {
+    super.start();
+
     const pokemon = this.getPokemon();
     if (pokemon?.isActive(true) && pokemon.status && pokemon.status.isPostTurn()) {
       pokemon.status.incrementTurn();
@@ -39,7 +41,8 @@ export class PostTurnStatusEffectPhase extends PokemonPhase {
         }
         if (damage.value) {
           // Set preventEndure flag to avoid pokemon surviving thanks to focus band, sturdy, endure ...
-          this.scene.damageNumberHandler.add(this.getPokemon(), pokemon.damage(damage.value, false, true));
+          const source = pokemon.status.sourceId ? pokemon.scene.getPokemonById(pokemon.status.sourceId) : null;
+          this.scene.damageNumberHandler.add(this.getPokemon(), pokemon.damage(damage.value, source, false, true));
           pokemon.updateInfo();
         }
         new CommonBattleAnim(CommonAnim.POISON + (pokemon.status.effect - 1), pokemon).play(this.scene, false, () => this.end());

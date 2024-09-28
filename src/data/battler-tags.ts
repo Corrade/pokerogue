@@ -9,6 +9,7 @@ import { BlockNonDirectDamageAbAttr, FlinchEffectAbAttr, ReverseDrainAbAttr, app
 import { TerrainType } from "./terrain";
 import { WeatherType } from "./weather";
 import { allAbilities } from "./ability";
+import BattleScene from "../battle-scene";
 import { SpeciesFormChangeManualTrigger } from "./pokemon-forms";
 import { Abilities } from "#enums/abilities";
 import { BattlerTagType } from "#enums/battler-tag-type";
@@ -89,6 +90,10 @@ export class BattlerTag {
     this.turnCount = source.turnCount;
     this.sourceMove = source.sourceMove;
     this.sourceId = source.sourceId;
+  }
+
+  getSourcePokemon(scene: BattleScene): Pokemon | null {
+    return this.sourceId ? scene.getPokemonById(this.sourceId) : null;
   }
 }
 
@@ -570,8 +575,8 @@ export class InterruptedTag extends BattlerTag {
  * BattlerTag that represents the {@link https://bulbapedia.bulbagarden.net/wiki/Confusion_(status_condition) Confusion} status condition
  */
 export class ConfusedTag extends BattlerTag {
-  constructor(turnCount: number, sourceMove: Moves) {
-    super(BattlerTagType.CONFUSED, BattlerTagLapseType.MOVE, turnCount, sourceMove, undefined, true);
+  constructor(turnCount: number, sourceMove: Moves, sourceId: number) {
+    super(BattlerTagType.CONFUSED, BattlerTagLapseType.MOVE, turnCount, sourceMove, sourceId, true);
   }
 
   canAdd(pokemon: Pokemon): boolean {
@@ -610,7 +615,7 @@ export class ConfusedTag extends BattlerTag {
         const def = pokemon.getEffectiveStat(Stat.DEF);
         const damage = Utils.toDmgValue(((((2 * pokemon.level / 5 + 2) * 40 * atk / def) / 50) + 2) * (pokemon.randSeedIntRange(85, 100) / 100));
         pokemon.scene.queueMessage(i18next.t("battlerTags:confusedLapseHurtItself"));
-        pokemon.damageAndUpdate(damage);
+        pokemon.damageAndUpdate(damage, this.getSourcePokemon(pokemon.scene));
         pokemon.battleData.hitCount++;
         (pokemon.scene.getCurrentPhase() as MovePhase).cancel();
       }
@@ -647,7 +652,7 @@ export class DestinyBondTag extends BattlerTag {
     if (lapseType !== BattlerTagLapseType.CUSTOM) {
       return super.lapse(pokemon, lapseType);
     }
-    const source = this.sourceId ? pokemon.scene.getPokemonById(this.sourceId) : null;
+    const source = this.getSourcePokemon(pokemon.scene);
     if (!source?.isFainted()) {
       return true;
     }
@@ -667,7 +672,7 @@ export class DestinyBondTag extends BattlerTag {
         pokemonNameWithAffix2: getPokemonNameWithAffix(pokemon)
       })
     );
-    pokemon.damageAndUpdate(pokemon.hp, HitResult.ONE_HIT_KO, false, false, true);
+    pokemon.damageAndUpdate(pokemon.hp, source, HitResult.ONE_HIT_KO, false, false, true);
     return false;
   }
 }
@@ -785,7 +790,7 @@ export class SeedTag extends BattlerTag {
         if (!cancelled.value) {
           pokemon.scene.unshiftPhase(new CommonAnimPhase(pokemon.scene, source.getBattlerIndex(), pokemon.getBattlerIndex(), CommonAnim.LEECH_SEED));
 
-          const damage = pokemon.damageAndUpdate(Utils.toDmgValue(pokemon.getMaxHp() / 8));
+          const damage = pokemon.damageAndUpdate(Utils.toDmgValue(pokemon.getMaxHp() / 8), source);
           const reverseDrain = pokemon.hasAbilityWithAttr(ReverseDrainAbAttr, false);
           pokemon.scene.unshiftPhase(new PokemonHealPhase(pokemon.scene, source.getBattlerIndex(),
             !reverseDrain ? damage : damage * -1,
@@ -804,8 +809,8 @@ export class SeedTag extends BattlerTag {
 }
 
 export class NightmareTag extends BattlerTag {
-  constructor() {
-    super(BattlerTagType.NIGHTMARE, BattlerTagLapseType.AFTER_MOVE, 1, Moves.NIGHTMARE);
+  constructor(sourceId: number) {
+    super(BattlerTagType.NIGHTMARE, BattlerTagLapseType.AFTER_MOVE, 1, Moves.NIGHTMARE, sourceId);
   }
 
   onAdd(pokemon: Pokemon): void {
@@ -831,7 +836,7 @@ export class NightmareTag extends BattlerTag {
       applyAbAttrs(BlockNonDirectDamageAbAttr, pokemon, cancelled);
 
       if (!cancelled.value) {
-        pokemon.damageAndUpdate(Utils.toDmgValue(pokemon.getMaxHp() / 4));
+        pokemon.damageAndUpdate(Utils.toDmgValue(pokemon.getMaxHp() / 4), this.getSourcePokemon(pokemon.scene));
       }
     }
 
@@ -1132,7 +1137,7 @@ export abstract class DamagingTrapTag extends TrappedTag {
       applyAbAttrs(BlockNonDirectDamageAbAttr, pokemon, cancelled);
 
       if (!cancelled.value) {
-        pokemon.damageAndUpdate(Utils.toDmgValue(pokemon.getMaxHp() / 8));
+        pokemon.damageAndUpdate(Utils.toDmgValue(pokemon.getMaxHp() / 8), this.getSourcePokemon(pokemon.scene));
       }
     }
 
@@ -1323,7 +1328,7 @@ export class ContactDamageProtectedTag extends ProtectedTag {
       if (effectPhase instanceof MoveEffectPhase && effectPhase.move.getMove().hasFlag(MoveFlags.MAKES_CONTACT)) {
         const attacker = effectPhase.getPokemon();
         if (!attacker.hasAbilityWithAttr(BlockNonDirectDamageAbAttr)) {
-          attacker.damageAndUpdate(Utils.toDmgValue(attacker.getMaxHp() * (1 / this.damageRatio)), HitResult.OTHER);
+          attacker.damageAndUpdate(Utils.toDmgValue(attacker.getMaxHp() * (1 / this.damageRatio)), pokemon, HitResult.OTHER);
         }
       }
     }
@@ -1453,8 +1458,8 @@ export class SturdyTag extends BattlerTag {
 }
 
 export class PerishSongTag extends BattlerTag {
-  constructor(turnCount: number) {
-    super(BattlerTagType.PERISH_SONG, BattlerTagLapseType.TURN_END, turnCount, Moves.PERISH_SONG, undefined, true);
+  constructor(turnCount: number, sourceId: number) {
+    super(BattlerTagType.PERISH_SONG, BattlerTagLapseType.TURN_END, turnCount, Moves.PERISH_SONG, sourceId, true);
   }
 
   canAdd(pokemon: Pokemon): boolean {
@@ -1472,7 +1477,7 @@ export class PerishSongTag extends BattlerTag {
         })
       );
     } else {
-      pokemon.damageAndUpdate(pokemon.hp, HitResult.ONE_HIT_KO, false, true, true);
+      pokemon.damageAndUpdate(pokemon.hp, this.getSourcePokemon(pokemon.scene), HitResult.ONE_HIT_KO, false, true, true);
     }
 
     return ret;
@@ -1823,7 +1828,7 @@ export class SaltCuredTag extends BattlerTag {
 
       if (!cancelled.value) {
         const pokemonSteelOrWater = pokemon.isOfType(Type.STEEL) || pokemon.isOfType(Type.WATER);
-        pokemon.damageAndUpdate(Utils.toDmgValue(pokemonSteelOrWater ? pokemon.getMaxHp() / 4 : pokemon.getMaxHp() / 8));
+        pokemon.damageAndUpdate(Utils.toDmgValue(pokemonSteelOrWater ? pokemon.getMaxHp() / 4 : pokemon.getMaxHp() / 8), this.getSourcePokemon(pokemon.scene));
 
         pokemon.scene.queueMessage(
           i18next.t("battlerTags:saltCuredLapse", {
@@ -1869,7 +1874,7 @@ export class CursedTag extends BattlerTag {
       applyAbAttrs(BlockNonDirectDamageAbAttr, pokemon, cancelled);
 
       if (!cancelled.value) {
-        pokemon.damageAndUpdate(Utils.toDmgValue(pokemon.getMaxHp() / 4));
+        pokemon.damageAndUpdate(Utils.toDmgValue(pokemon.getMaxHp() / 4), this.getSourcePokemon(pokemon.scene));
         pokemon.scene.queueMessage(i18next.t("battlerTags:cursedLapse", { pokemonNameWithAffix: getPokemonNameWithAffix(pokemon) }));
       }
     }
@@ -2349,13 +2354,13 @@ export function getBattlerTag(tagType: BattlerTagType, turnCount: number, source
   case BattlerTagType.INTERRUPTED:
     return new InterruptedTag(sourceMove);
   case BattlerTagType.CONFUSED:
-    return new ConfusedTag(turnCount, sourceMove);
+    return new ConfusedTag(turnCount, sourceMove, sourceId);
   case BattlerTagType.INFATUATED:
     return new InfatuatedTag(sourceMove, sourceId);
   case BattlerTagType.SEEDED:
     return new SeedTag(sourceId);
   case BattlerTagType.NIGHTMARE:
-    return new NightmareTag();
+    return new NightmareTag(sourceId);
   case BattlerTagType.FRENZY:
     return new FrenzyTag(turnCount, sourceMove, sourceId);
   case BattlerTagType.CHARGING:
@@ -2413,7 +2418,7 @@ export function getBattlerTag(tagType: BattlerTagType, turnCount: number, source
   case BattlerTagType.STURDY:
     return new SturdyTag(sourceMove);
   case BattlerTagType.PERISH_SONG:
-    return new PerishSongTag(turnCount);
+    return new PerishSongTag(turnCount, sourceId);
   case BattlerTagType.CENTER_OF_ATTENTION:
     return new CenterOfAttentionTag(sourceMove);
   case BattlerTagType.TRUANT:

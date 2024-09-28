@@ -100,7 +100,7 @@ export const FieryFalloutEncounter: MysteryEncounter =
       // Load animations/sfx for Volcarona moves
       loadCustomMovesForEncounter(scene, [Moves.FIRE_SPIN, Moves.QUIVER_DANCE]);
 
-      scene.arena.trySetWeather(WeatherType.SUNNY, true);
+      scene.arena.trySetWeather(WeatherType.SUNNY); // TODO Ideally the source of the weather should be the boss we haven't instantiated yet
 
       encounter.setDialogueToken("volcaronaName", getPokemonSpecies(Species.VOLCARONA).getName());
 

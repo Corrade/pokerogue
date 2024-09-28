@@ -290,10 +290,11 @@ export class Arena {
   /**
    * Sets weather to the override specified in overrides.ts
    * @param weather new {@linkcode WeatherType} to set
+   * @param sourceId the id of the pokemon responsible for the weather
    * @returns true to force trySetWeather to return true
    */
-  trySetWeatherOverride(weather: WeatherType): boolean {
-    this.weather = new Weather(weather, 0);
+  trySetWeatherOverride(weather: WeatherType, sourceId?: integer): boolean {
+    this.weather = new Weather(weather, 0, sourceId);
     this.scene.unshiftPhase(new CommonAnimPhase(this.scene, undefined, undefined, CommonAnim.SUNNY + (weather - 1)));
     this.scene.queueMessage(getWeatherStartMessage(weather)!); // TODO: is this bang correct?
     return true;
@@ -302,12 +303,12 @@ export class Arena {
   /**
    * Attempts to set a new weather to the battle
    * @param weather {@linkcode WeatherType} new {@linkcode WeatherType} to set
-   * @param hasPokemonSource boolean if the new weather is from a pokemon
+   * @param sourceId the id of the pokemon responsible for the weather
    * @returns true if new weather set, false if no weather provided or attempting to set the same weather as currently in use
    */
-  trySetWeather(weather: WeatherType, hasPokemonSource: boolean): boolean {
+  trySetWeather(weather: WeatherType, sourceId?: integer): boolean {
     if (Overrides.WEATHER_OVERRIDE) {
-      return this.trySetWeatherOverride(Overrides.WEATHER_OVERRIDE);
+      return this.trySetWeatherOverride(Overrides.WEATHER_OVERRIDE, sourceId);
     }
 
     if (this.weather?.weatherType === (weather || undefined)) {
@@ -316,7 +317,7 @@ export class Arena {
 
     const oldWeatherType = this.weather?.weatherType || WeatherType.NONE;
 
-    this.weather = weather ? new Weather(weather, hasPokemonSource ? 5 : 0) : null;
+    this.weather = weather ? new Weather(weather, sourceId ? 5 : 0, sourceId) : null;
     this.eventTarget.dispatchEvent(new WeatherChangedEvent(oldWeatherType, this.weather?.weatherType!, this.weather?.turnsLeft!)); // TODO: is this bang correct?
 
     if (this.weather) {
@@ -731,7 +732,7 @@ export class Arena {
   resetArenaEffects(): void {
     // Don't reset weather if a Biome's permanent weather is active
     if (this.weather?.turnsLeft !== 0) {
-      this.trySetWeather(WeatherType.NONE, false);
+      this.trySetWeather(WeatherType.NONE);
     }
     this.trySetTerrain(TerrainType.NONE, false, true);
     this.removeAllTags();

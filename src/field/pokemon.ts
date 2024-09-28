@@ -117,6 +117,7 @@ export default abstract class Pokemon extends Phaser.GameObjects.Container {
   public battleSummonData: PokemonBattleSummonData;
   public turnData: PokemonTurnData;
   public mysteryEncounterPokemonData: MysteryEncounterPokemonData;
+  public runData: PokemonRunData;
 
   /** Used by Mystery Encounters to execute pokemon-specific logic (such as stat boosts) at start of battle */
   public mysteryEncounterBattleEffects?: (pokemon: Pokemon) => void;
@@ -258,6 +259,7 @@ export default abstract class Pokemon extends Phaser.GameObjects.Container {
       }
       this.luck = (this.shiny ? this.variant + 1 : 0) + (this.fusionShiny ? this.fusionVariant + 1 : 0);
       this.fusionLuck = this.luck;
+      this.runData = new PokemonRunData();
     }
 
     this.generateName();
@@ -2672,7 +2674,7 @@ export default abstract class Pokemon extends Phaser.GameObjects.Container {
          * We explicitly require to ignore the faint phase here, as we want to show the messages
          * about the critical hit and the super effective/not very effective messages before the faint phase.
          */
-        const damage = this.damageAndUpdate(isBlockedBySubstitute ? 0 : dmg, result as DamageResult, isCritical, isOneHitKo, isOneHitKo, true);
+        const damage = this.damageAndUpdate(isBlockedBySubstitute ? 0 : dmg, source, result as DamageResult, isCritical, isOneHitKo, isOneHitKo, true);
 
         if (damage > 0) {
           if (source.isPlayer()) {
@@ -2731,12 +2733,13 @@ export default abstract class Pokemon extends Phaser.GameObjects.Container {
   /**
    * Called by damageAndUpdate()
    * @param damage integer
+   * @param sourcePokemon pokemon responsible for dealing the damage
    * @param ignoreSegments boolean, not currently used
    * @param preventEndure  used to update damage if endure or sturdy
    * @param ignoreFaintPhase  flag on wheter to add FaintPhase if pokemon after applying damage faints
    * @returns integer representing damage
    */
-  damage(damage: integer, ignoreSegments: boolean = false, preventEndure: boolean = false, ignoreFaintPhase: boolean = false): integer {
+  damage(damage: integer, sourcePokemon: Pokemon | null, ignoreSegments: boolean = false, preventEndure: boolean = false, ignoreFaintPhase: boolean = false): integer {
     if (this.isFainted()) {
       return 0;
     }
@@ -2758,18 +2761,62 @@ export default abstract class Pokemon extends Phaser.GameObjects.Container {
 
     damage = Math.min(damage, this.hp);
     this.hp = this.hp - damage;
-    if (this.isFainted() && !ignoreFaintPhase) {
-      /**
-       * When adding the FaintPhase, want to toggle future unshiftPhase() and queueMessage() calls
-       * to appear before the FaintPhase (as FaintPhase will potentially end the encounter and add Phases such as
-       * GameOverPhase, VictoryPhase, etc.. that will interfere with anything else that happens during this MoveEffectPhase)
-       *
-       * Once the MoveEffectPhase is over (and calls it's .end() function, shiftPhase() will reset the PhaseQueueSplice via clearPhaseQueueSplice() )
-       */
-      this.scene.setPhaseQueueSplice();
-      this.scene.unshiftPhase(new FaintPhase(this.scene, this.getBattlerIndex(), preventEndure));
-      this.destroySubstitute();
-      this.resetSummonData();
+
+    const isSelfDamage = (sourcePokemon?.id === this.id);
+
+    console.log("Run info: processing damage: " + sourcePokemon?.name + " -> " + this.name);
+
+    if (damage > 0) {
+      if (this.isPlayer()) {
+        this.runData.damageTaken += damage;
+        console.log("Run info: " + this.name + " took damage: " + damage);
+      }
+
+      if (sourcePokemon && !isSelfDamage) {
+        if (sourcePokemon.isPlayer()) {
+          sourcePokemon.runData.damageDealt += damage;
+          console.log("Run info: " + sourcePokemon.name + " dealt damage: " + damage);
+        }
+
+        if (!this.isPlayer()) {
+          this.battleData.creditAssistOnFaintToPokemonIds.add(sourcePokemon.id);
+        }
+      }
+    }
+
+    if (this.isFainted()) {
+      if (this.isPlayer()) {
+        this.runData.faints += 1;
+        console.log("Run info: " + this.name + " died");
+      }
+
+      if (sourcePokemon && !isSelfDamage && sourcePokemon.isPlayer()) {
+        sourcePokemon.runData.knockouts += 1;
+        console.log("Run info: " + sourcePokemon.name + " got a kill");
+      }
+
+      // Ignore self-assists and don't grant sourcePokemon an assist since it's probably already been awarded a kill
+      for (const pokemonId of [...this.battleData.creditAssistOnFaintToPokemonIds].filter(id => (id !== this.id && id !== sourcePokemon?.id))) {
+        const assistantPokemon = this.scene.getPokemonById(pokemonId);
+        if (assistantPokemon && assistantPokemon.isPlayer()) {
+          assistantPokemon.runData.assists += 1;
+          console.log("Run info: " + assistantPokemon.name + " got an assist");
+        }
+      }
+
+      if (!ignoreFaintPhase) {
+        /**
+         * When adding the FaintPhase, want to toggle future unshiftPhase() and queueMessage() calls
+         * to appear before the FaintPhase (as FaintPhase will potentially end the encounter and add Phases such as
+         * GameOverPhase, VictoryPhase, etc.. that will interfere with anything else that happens during this MoveEffectPhase)
+         *
+         * Once the MoveEffectPhase is over (and calls it's .end() function, shiftPhase() will reset the PhaseQueueSplice via clearPhaseQueueSplice() )
+         */
+        this.scene.setPhaseQueueSplice();
+        this.scene.unshiftPhase(new FaintPhase(this.scene, this.getBattlerIndex(), preventEndure));
+        this.destroySubstitute();
+        this.resetSummonData();
+      }
     }
 
     return damage;
@@ -2778,6 +2825,7 @@ export default abstract class Pokemon extends Phaser.GameObjects.Container {
   /**
    * Called by apply(), given the damage, adds a new DamagePhase and actually updates HP values, etc.
    * @param damage integer - passed to damage()
+   * @param sourcePokemon pokemon responsible for dealing the damage
    * @param result an enum if it's super effective, not very, etc.
    * @param critical boolean if move is a critical hit
    * @param ignoreSegments boolean, passed to damage() and not used currently
@@ -2785,10 +2833,10 @@ export default abstract class Pokemon extends Phaser.GameObjects.Container {
    * @param ignoreFaintPhase boolean to ignore adding a FaintPhase, passsed to damage()
    * @returns integer of damage done
    */
-  damageAndUpdate(damage: integer, result?: DamageResult, critical: boolean = false, ignoreSegments: boolean = false, preventEndure: boolean = false, ignoreFaintPhase: boolean = false): integer {
+  damageAndUpdate(damage: integer, sourcePokemon: Pokemon | null, result?: DamageResult, critical: boolean = false, ignoreSegments: boolean = false, preventEndure: boolean = false, ignoreFaintPhase: boolean = false): integer {
     const damagePhase = new DamagePhase(this.scene, this.getBattlerIndex(), damage, result as DamageResult, critical);
     this.scene.unshiftPhase(damagePhase);
-    damage = this.damage(damage, ignoreSegments, preventEndure, ignoreFaintPhase);
+    damage = this.damage(damage, sourcePokemon, ignoreSegments, preventEndure, ignoreFaintPhase);
     // Damage amount may have changed, but needed to be queued before calling damage function
     damagePhase.updateAmount(damage);
     return damage;
@@ -3337,7 +3385,7 @@ export default abstract class Pokemon extends Phaser.GameObjects.Container {
 
     statusCureTurn = statusCureTurn!; // tell TS compiler it's defined
     effect = effect!; // If `effect` is undefined then `trySetStatus()` will have already returned early via the `canSetStatus()` call
-    this.status = new Status(effect, 0, statusCureTurn?.value);
+    this.status = new Status(effect, 0, statusCureTurn?.value, sourcePokemon?.id);
 
     if (effect !== StatusEffect.FAINT) {
       this.scene.triggerPokemonFormChange(this, SpeciesFormChangeStatusEffectTrigger, true);
@@ -3862,6 +3910,8 @@ export class PlayerPokemon extends Pokemon {
       } else {
         this.moveset = [];
       }
+    } else {
+      this.runData = dataSource.runData;
     }
     this.generateCompatibleTms();
   }
@@ -4210,6 +4260,12 @@ export class PlayerPokemon extends Pokemon {
       if ((pokemon.pauseEvolutions) || (this.pauseEvolutions)) {
         this.pauseEvolutions = true;
       }
+
+      this.runData.knockouts += pokemon.runData.knockouts;
+      this.runData.assists += pokemon.runData.assists;
+      this.runData.faints += pokemon.runData.faints;
+      this.runData.damageDealt += pokemon.runData.damageDealt;
+      this.runData.damageTaken += pokemon.runData.damageTaken;
 
       this.scene.validateAchv(achvs.SPLICE);
       this.scene.gameData.gameStats.pokemonFused++;
@@ -4685,7 +4741,7 @@ export class EnemyPokemon extends Pokemon {
     return 0;
   }
 
-  damage(damage: integer, ignoreSegments: boolean = false, preventEndure: boolean = false, ignoreFaintPhase: boolean = false): integer {
+  damage(damage: integer, sourcePokemon: Pokemon | null, ignoreSegments: boolean = false, preventEndure: boolean = false, ignoreFaintPhase: boolean = false): integer {
     if (this.isFainted()) {
       return 0;
     }
@@ -4723,7 +4779,7 @@ export class EnemyPokemon extends Pokemon {
       }
     }
 
-    const ret = super.damage(damage, ignoreSegments, preventEndure, ignoreFaintPhase);
+    const ret = super.damage(damage, sourcePokemon, ignoreSegments, preventEndure, ignoreFaintPhase);
 
     if (this.isBoss()) {
       if (ignoreSegments) {
@@ -4905,6 +4961,7 @@ export class PokemonBattleData {
   public berriesEaten: BerryType[] = [];
   public abilitiesApplied: Abilities[] = [];
   public abilityRevealed: boolean = false;
+  public creditAssistOnFaintToPokemonIds: Set<integer> = new Set();
 }
 
 export class PokemonBattleSummonData {
@@ -4926,6 +4983,14 @@ export class PokemonTurnData {
   public order: number;
   public statStagesIncreased: boolean = false;
   public statStagesDecreased: boolean = false;
+}
+
+export class PokemonRunData {
+  public knockouts: integer = 0;
+  public assists: integer = 0;
+  public faints: integer = 0;
+  public damageDealt: integer = 0;
+  public damageTaken: integer = 0;
 }
 
 export enum AiType {
